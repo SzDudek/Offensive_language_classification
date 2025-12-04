@@ -5,7 +5,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
 from imblearn.over_sampling import SMOTE
+from sklearn.base import clone
+from imblearn.over_sampling import RandomOverSampler
 
 
 def plot_confusion_matrix(y_true, y_pred, name):
@@ -22,19 +26,21 @@ def plot_confusion_matrix(y_true, y_pred, name):
 
 if __name__ == '__main__':
     data = pd.read_csv("HateSpeechDataset.csv")
+    data = data[data["Label"].isin(['0','1'])]
+
     X = data["Content"]
-    y = data["Label"]
-
-    print(y.value_counts())
-    print(y.unique())
-
-    y = y[y.isin(['0', '1'])]
-    X = X[y.index]
+    y = data["Label"].astype(int)
 
     y = y.astype(int)
 
     print(y.value_counts())
     print(y.unique())
+
+    classifiers = {
+        "kNN": KNeighborsClassifier(),
+        "GNB": GaussianNB(),
+        "LR": LogisticRegression(max_iter=200)
+    }
 
     vectorizer = TfidfVectorizer()
     X_vec = vectorizer.fit_transform(X)
@@ -43,28 +49,45 @@ if __name__ == '__main__':
         X_vec, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    clf_non_balanced = LogisticRegression(max_iter=100)
-    clf_non_balanced.fit(X_train, y_train)
-    y_pred_non_balanced = clf_non_balanced.predict(X_test)
-    report_non_balanced = classification_report(y_test, y_pred_non_balanced)
-    plot_confusion_matrix(y_test, y_pred_non_balanced, "confusion_mtx_LR_nb.png")
+    X_train_dense = X_train.toarray()
+    X_test_dense = X_test.toarray()
 
-    with open("LR_non_balanced.txt", "w") as f:
-        f.write(report_non_balanced)
+    for clf_name, clf in classifiers.items():
 
-    sm = SMOTE()
-    X_train_bal, y_train_bal = sm.fit_resample(X_train, y_train)
+        clf_nb = clone(clf)
 
-    clf_balanced = LogisticRegression(max_iter=100)
-    clf_balanced.fit(X_train_bal, y_train_bal)
-    y_pred_balanced = clf_balanced.predict(X_test)
-    report_balanced = classification_report(y_test, y_pred_balanced)
-    plot_confusion_matrix(y_test, y_pred_balanced, "confusion_mtx_LR_SMOTE.png")
+        if clf_name == "GNB":
+            clf_nb.fit(X_train_dense, y_train)
+            y_pred_nb = clf_nb.predict(X_test_dense)
+        else:
+            clf_nb.fit(X_train, y_train)
+            y_pred_nb = clf_nb.predict(X_test)
 
-    with open("LR_SMOTE.txt", "w") as f:
-        f.write(report_balanced)
 
-    print("\n=== WITHOUT BALANCING ===")
-    print(report_non_balanced)
-    print("\n=== WITH SMOTE BALANCING ===")
-    print(report_balanced)
+        report_nb = classification_report(y_test, y_pred_nb)
+        plot_confusion_matrix(y_test, y_pred_nb, "confusion_mtx_{}_nb.png".format(clf_name))
+
+        with open("{}_non_balanced.txt".format(clf_name), "w") as f:
+            f.write(report_nb)
+
+        # sm = SMOTE()
+        ros = RandomOverSampler()
+
+        X_train_bal, y_train_bal = ros.fit_resample(X_train, y_train)
+
+        clf_bal = clone(clf)
+
+        if clf_name == "GNB":
+            # GNB requires dense
+            X_train_bal_dense = X_train_bal.toarray()
+            clf_bal.fit(X_train_bal_dense, y_train_bal)
+            y_pred_bal = clf_bal.predict(X_test_dense)
+        else:
+            clf_bal.fit(X_train_bal, y_train_bal)
+            y_pred_bal = clf_bal.predict(X_test)
+
+        report_bal = classification_report(y_test, y_pred_bal)
+        plot_confusion_matrix(y_test, y_pred_bal, "confusion_mtx_{}_ROS.png".format(clf_name))
+
+        with open("{}_SMOTE.txt".format(clf_name), "w") as f:
+            f.write(report_bal)
