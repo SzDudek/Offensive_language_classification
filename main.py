@@ -1,15 +1,17 @@
 import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.model_selection import train_test_split, RepeatedStratifiedKFold
+from sklearn.metrics import classification_report, confusion_matrix, balanced_accuracy_score
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
+from sklearn.svm import LinearSVC
 from imblearn.over_sampling import SMOTE
 from sklearn.base import clone
 from imblearn.over_sampling import RandomOverSampler
+from scipy import sparse
 
 
 def plot_confusion_matrix(y_true, y_pred, name):
@@ -24,70 +26,51 @@ def plot_confusion_matrix(y_true, y_pred, name):
     plt.savefig(name)
 
 
+def run_rskf(X, y, n_splits=5, n_repeats=2):
+    rskf = RepeatedStratifiedKFold(n_splits=5, n_repeats=2)
+    fold_scores = []
+    for fold, (train_idx, val_idx) in enumerate(rskf.split(X, y)):
+        print(f"\n---- Fold {fold + 1} ----")
+
+        X_tr = X[train_idx]
+        y_tr = y.iloc[train_idx]
+
+        X_val = X[val_idx]
+        y_val = y.iloc[val_idx]
+
+        clf = LinearSVC()
+
+        print("training...")
+        clf.fit(X_tr, y_tr)
+
+        print("validating...")
+        y_val_pred = clf.predict(X_val)
+
+        score = balanced_accuracy_score(y_val, y_val_pred)
+        fold_scores.append(score)
+
+        print(f"Fold score: {score:.4f}")
+    return fold_scores
+
+
 if __name__ == '__main__':
+    X_bal = sparse.load_npz("balanced_X.npz")
+    y_bal = pd.read_csv("balanced_y.csv", header=None, dtype=int)[0]
+
+    balanced_scores = run_rskf(X_bal, y_bal)
+
     data = pd.read_csv("HateSpeechDataset.csv")
     data = data[data["Label"].isin(['0','1'])]
 
-    X = data["Content"]
-    y = data["Label"].astype(int)
-
+    X = data["Content"].reset_index(drop=True)
+    y = data["Label"].astype(int).reset_index(drop=True)
     y = y.astype(int)
-
-    print(y.value_counts())
-    print(y.unique())
-
-    classifiers = {
-        "kNN": KNeighborsClassifier(),
-        "GNB": GaussianNB(),
-        "LR": LogisticRegression(max_iter=200)
-    }
 
     vectorizer = TfidfVectorizer()
     X_vec = vectorizer.fit_transform(X)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_vec, y, test_size=0.2, random_state=42, stratify=y
-    )
-
-    X_train_dense = X_train.toarray()
-    X_test_dense = X_test.toarray()
-
-    for clf_name, clf in classifiers.items():
-
-        clf_nb = clone(clf)
-
-        if clf_name == "GNB":
-            clf_nb.fit(X_train_dense, y_train)
-            y_pred_nb = clf_nb.predict(X_test_dense)
-        else:
-            clf_nb.fit(X_train, y_train)
-            y_pred_nb = clf_nb.predict(X_test)
-
-
-        report_nb = classification_report(y_test, y_pred_nb)
-        plot_confusion_matrix(y_test, y_pred_nb, "confusion_mtx_{}_nb.png".format(clf_name))
-
-        with open("{}_non_balanced.txt".format(clf_name), "w") as f:
-            f.write(report_nb)
-
-        # sm = SMOTE()
-        ros = RandomOverSampler()
-
-        X_train_bal, y_train_bal = ros.fit_resample(X_train, y_train)
-
-        clf_bal = clone(clf)
-
-        if clf_name == "GNB":
-            # GNB requires dense
-            X_train_bal_dense = X_train_bal.toarray()
-            clf_bal.fit(X_train_bal_dense, y_train_bal)
-            y_pred_bal = clf_bal.predict(X_test_dense)
-        else:
-            clf_bal.fit(X_train_bal, y_train_bal)
-            y_pred_bal = clf_bal.predict(X_test)
-
-        report_bal = classification_report(y_test, y_pred_bal)
-        plot_confusion_matrix(y_test, y_pred_bal, "confusion_mtx_{}_ROS.png".format(clf_name))
-
-        with open("{}_SMOTE.txt".format(clf_name), "w") as f:
-            f.write(report_bal)
+    imbalanced_scores = run_rskf(X_vec, y)
+    print("\n============================")
+    print(f"Imbalanced dataset mean CV balanced accuracy: {sum(imbalanced_scores) / len(imbalanced_scores):.4f}\n")
+    print(f"Balanced dataset mean CV balanced accuracy: {sum(balanced_scores) / len(balanced_scores):.4f}")
+    print("============================\n")
