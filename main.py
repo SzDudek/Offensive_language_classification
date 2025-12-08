@@ -5,13 +5,12 @@ from sklearn.model_selection import train_test_split, RepeatedStratifiedKFold
 from sklearn.metrics import classification_report, confusion_matrix, balanced_accuracy_score
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.naive_bayes import GaussianNB
 from sklearn.svm import LinearSVC
+from sklearn.linear_model import SGDClassifier
 from imblearn.over_sampling import SMOTE
-from sklearn.base import clone
 from imblearn.over_sampling import RandomOverSampler
-from scipy import sparse
+from imblearn.under_sampling import RandomUnderSampler
+from sklearn.decomposition import TruncatedSVD
 
 
 def plot_confusion_matrix(y_true, y_pred, name):
@@ -26,51 +25,98 @@ def plot_confusion_matrix(y_true, y_pred, name):
     plt.savefig(name)
 
 
-def run_rskf(X, y, n_splits=5, n_repeats=2):
-    rskf = RepeatedStratifiedKFold(n_splits=5, n_repeats=2)
+def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc'):
+    rskf = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=n_repeats)
     fold_scores = []
+
     for fold, (train_idx, val_idx) in enumerate(rskf.split(X, y)):
         print(f"\n---- Fold {fold + 1} ----")
 
         X_tr = X[train_idx]
         y_tr = y.iloc[train_idx]
 
+        if sampling != '':
+            print("Balancing data...")
+        if sampling == 'ros':
+            ros = RandomOverSampler()
+            X_tr, y_tr = ros.fit_resample(X_tr, y_tr)
+        elif sampling == 'rus':
+            rus = RandomUnderSampler()
+            X_tr, y_tr = rus.fit_resample(X_tr, y_tr)
+        elif sampling == 'smote':
+            smote = SMOTE()
+            X_tr, y_tr = smote.fit_resample(X_tr, y_tr)
+        elif sampling != '':
+            raise Exception(f"Unknown sampling technique: {sampling}")
+
+        if classifier == 'svc':
+            clf = LinearSVC()
+        elif classifier == 'lr':
+            clf = LogisticRegression()
+        elif classifier == 'sgd':
+            if sampling == '':
+                clf = SGDClassifier(class_weight={0: 1, 1: 5})
+            else:
+                clf = SGDClassifier()
+        else:
+            raise Exception(f"Unknown classifier {classifier}")
+
         X_val = X[val_idx]
         y_val = y.iloc[val_idx]
 
-        clf = LinearSVC()
+        print("Reducing features...")
+        svd = TruncatedSVD(n_components=200)
+        X_tr = svd.fit_transform(X_tr)
+        X_val = svd.transform(X_val)
 
-        print("training...")
+        print("Training classifier...")
         clf.fit(X_tr, y_tr)
 
-        print("validating...")
+        print("Predicting labels...")
         y_val_pred = clf.predict(X_val)
-
         score = balanced_accuracy_score(y_val, y_val_pred)
         fold_scores.append(score)
 
         print(f"Fold score: {score:.4f}")
+
+        if fold == 0:
+            plot_confusion_matrix(y_val, y_val_pred, f"{classifier}_{sampling}.png")
+
     return fold_scores
 
 
 if __name__ == '__main__':
-    X_bal = sparse.load_npz("balanced_X.npz")
-    y_bal = pd.read_csv("balanced_y.csv", header=None, dtype=int)[0]
+    configurations = [
+        {"classifier": "svc", "sampling": ""},
+        {"classifier": "svc", "sampling": "ros"},
+        {"classifier": "svc", "sampling": "rus"},
+        {"classifier": "svc", "sampling": "smote"},
 
-    balanced_scores = run_rskf(X_bal, y_bal)
+        {"classifier": "lr", "sampling": ""},
+        {"classifier": "lr", "sampling": "ros"},
+        {"classifier": "lr", "sampling": "rus"},
+        {"classifier": "lr", "sampling": "smote"},
+
+        {"classifier": "sgd", "sampling": ""},
+        {"classifier": "sgd", "sampling": "ros"},
+        {"classifier": "sgd", "sampling": "rus"},
+        {"classifier": "sgd", "sampling": "smote"}
+    ]
 
     data = pd.read_csv("HateSpeechDataset.csv")
     data = data[data["Label"].isin(['0','1'])]
 
     X = data["Content"].reset_index(drop=True)
     y = data["Label"].astype(int).reset_index(drop=True)
-    y = y.astype(int)
 
     vectorizer = TfidfVectorizer()
     X_vec = vectorizer.fit_transform(X)
 
-    imbalanced_scores = run_rskf(X_vec, y)
-    print("\n============================")
-    print(f"Imbalanced dataset mean CV balanced accuracy: {sum(imbalanced_scores) / len(imbalanced_scores):.4f}\n")
-    print(f"Balanced dataset mean CV balanced accuracy: {sum(balanced_scores) / len(balanced_scores):.4f}")
-    print("============================\n")
+    f = open("output.csv", "w")
+    f.write("clf,sampling,BAC\n")
+    for config in configurations:
+        balanced_scores = run_rskf(X_vec, y, sampling=config["sampling"], classifier=config["classifier"])
+        print(f"Mean balanced accuracy for {config["classifier"]} with {config["sampling"]}: {sum(balanced_scores)/len(balanced_scores):.4f}")
+        f.write(f"{config["classifier"]},{config["sampling"]},{sum(balanced_scores)/len(balanced_scores):.4f}\n")
+
+    f.close()
