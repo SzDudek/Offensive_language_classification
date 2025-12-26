@@ -1,6 +1,9 @@
+import gensim
+import numpy as np
 import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
+from gensim.models import Word2Vec
 from sklearn.model_selection import train_test_split, RepeatedStratifiedKFold
 from sklearn.metrics import classification_report, confusion_matrix, balanced_accuracy_score
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -24,8 +27,41 @@ def plot_confusion_matrix(y_true, y_pred, name):
     plt.title('Confusion Matrix', fontsize=16)
     plt.savefig(name)
 
+def tokenize_texts(texts):
+    return [gensim.utils.simple_preprocess(text) for text in texts]
 
-def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc'):
+
+def doc_vector(tokens, model, vec_size):
+    vectors = [model.wv[w] for w in tokens if w in model.wv]
+    if not vectors:
+        return np.zeros(vec_size, dtype=float)
+    return np.mean(vectors, axis=0)
+
+
+def build_w2v_fatures(X_tr, X_val, vec_size=100, window_size=5, min_count=2):
+    X_tr = tokenize_texts(X_tr)
+    X_val = tokenize_texts(X_val)
+    w2v_model = Word2Vec(
+        sentences=X_tr,
+        vector_size=vec_size,
+        window=window_size,
+        min_count=min_count
+    )
+
+    X_tr = np.vstack([
+        doc_vector(tokens, w2v_model, vec_size)
+        for tokens in X_tr
+    ])
+
+    X_val = np.vstack([
+        doc_vector(tokens, w2v_model, vec_size)
+        for tokens in X_val
+    ])
+
+    return X_tr, X_val
+
+
+def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='tfidf'):
     rskf = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=n_repeats)
     fold_scores = []
 
@@ -64,10 +100,18 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc'):
         X_val = X[val_idx]
         y_val = y.iloc[val_idx]
 
-        print("Reducing features...")
-        svd = TruncatedSVD(n_components=200)
-        X_tr = svd.fit_transform(X_tr)
-        X_val = svd.transform(X_val)
+        if rep == 'tfidf':
+            print("Reducing features by SVD...")
+            svd = TruncatedSVD(n_components=200)
+            X_tr = svd.fit_transform(X_tr)
+            X_val = svd.transform(X_val)
+
+        elif rep == 'word2vec':
+            print("Generating vectors with word2vec...")
+            X_tr, X_val = build_w2v_fatures(X_tr, X_val)
+
+        else:
+            raise Exception(f"Unknown representation: {rep}")
 
         print("Training classifier...")
         clf.fit(X_tr, y_tr)
@@ -100,7 +144,22 @@ if __name__ == '__main__':
         {"classifier": "sgd", "sampling": ""},
         {"classifier": "sgd", "sampling": "ros"},
         {"classifier": "sgd", "sampling": "rus"},
-        {"classifier": "sgd", "sampling": "smote"}
+        {"classifier": "sgd", "sampling": "smote"},
+
+        {"classifier": "svc", "sampling": "", "representation": "word2vec"},
+        {"classifier": "svc", "sampling": "ros", "representation": "word2vec"},
+        {"classifier": "svc", "sampling": "rus", "representation": "word2vec"},
+        {"classifier": "svc", "sampling": "smote", "representation": "word2vec"},
+
+        {"classifier": "lr", "sampling": "", "representation": "word2vec"},
+        {"classifier": "lr", "sampling": "ros", "representation": "word2vec"},
+        {"classifier": "lr", "sampling": "rus", "representation": "word2vec"},
+        {"classifier": "lr", "sampling": "smote", "representation": "word2vec"},
+
+        {"classifier": "sgd", "sampling": "", "representation": "word2vec"},
+        {"classifier": "sgd", "sampling": "ros", "representation": "word2vec"},
+        {"classifier": "sgd", "sampling": "rus", "representation": "word2vec"},
+        {"classifier": "sgd", "sampling": "smote", "representation": "word2vec"}
     ]
 
     data = pd.read_csv("HateSpeechDataset.csv")
@@ -115,7 +174,7 @@ if __name__ == '__main__':
     f = open("output.csv", "w")
     f.write("clf,sampling,BAC\n")
     for config in configurations:
-        balanced_scores = run_rskf(X_vec, y, sampling=config["sampling"], classifier=config["classifier"])
+        balanced_scores = run_rskf(X_vec, y, sampling=config["sampling"], classifier=config["classifier"], rep=config["representation"])
         print(f"Mean balanced accuracy for {config["classifier"]} with {config["sampling"]}: {sum(balanced_scores)/len(balanced_scores):.4f}")
         f.write(f"{config["classifier"]},{config["sampling"]},{sum(balanced_scores)/len(balanced_scores):.4f}\n")
 
