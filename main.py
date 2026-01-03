@@ -88,7 +88,7 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
         if classifier == 'svc':
             clf = LinearSVC()
         elif classifier == 'lr':
-            clf = LogisticRegression()
+            clf = LogisticRegression(max_iter=1000)
         elif classifier == 'sgd':
             if sampling == '':
                 clf = SGDClassifier(class_weight={0: 1, 1: 5})
@@ -174,7 +174,11 @@ if __name__ == '__main__':
     f = open("output.csv", "w")
     f.write("clf,sampling,BAC\n")
     for config in configurations:
-        balanced_scores = run_rskf(X_vec, y, sampling=config["sampling"], classifier=config["classifier"], rep=config["representation"])
+        rep = config.get("representation", "tfidf")
+
+        X_input = X if rep == 'tfidf' else X_vec
+
+        balanced_scores = run_rskf(X_input, y, sampling=config["sampling"], classifier=config["classifier"], rep=rep)
         print(f"Mean balanced accuracy for {config["classifier"]} with {config["sampling"]}: {sum(balanced_scores)/len(balanced_scores):.4f}")
         f.write(f"{config["classifier"]},{config["sampling"]},{sum(balanced_scores)/len(balanced_scores):.4f}\n")
 
