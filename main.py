@@ -14,7 +14,15 @@ from imblearn.over_sampling import SMOTE
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
 from sklearn.decomposition import TruncatedSVD
+import tensorflow_text as text
+import tensorflow as tf
+import tensorflow_hub as hub
 
+tfhub_handle_preprocess = "https://tfhub.dev/tensorflow/bert_en_uncased_preprocess/3"
+tfhub_handle_encoder = "https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/4"
+
+bert_preprocess = hub.KerasLayer(tfhub_handle_preprocess)
+bert_encoder = hub.KerasLayer(tfhub_handle_encoder, trainable=False)
 
 def plot_confusion_matrix(y_true, y_pred, name):
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
@@ -26,6 +34,20 @@ def plot_confusion_matrix(y_true, y_pred, name):
     plt.yticks([0.5, 1.5], ['0', '1'], rotation=0)
     plt.title('Confusion Matrix', fontsize=16)
     plt.savefig(name)
+
+def bert_encode(texts, batch_size=32):
+    embeddings = []
+
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i+batch_size]
+        inputs = bert_preprocess(batch)
+        outputs = bert_encoder(inputs)
+
+        # CLS token embedding
+        cls_embeddings = outputs["pooled_output"]
+        embeddings.append(cls_embeddings.numpy())
+
+    return np.vstack(embeddings)
 
 def tokenize_texts(texts):
     return [gensim.utils.simple_preprocess(text) for text in texts]
@@ -110,6 +132,21 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
             print("Generating vectors with word2vec...")
             X_tr, X_val = build_w2v_fatures(X_tr, X_val)
 
+        elif rep == 'bert':
+            print("Encoding texts with BERT...")
+            preprocess_layer = hub.KerasLayer(tfhub_handle_preprocess, name='preprocessing')
+            encoder = hub.KerasLayer(tfhub_handle_encoder, trainable=False)
+
+            X_tr_pre = preprocess_layer(X_tr)
+            X_val_pre = preprocess_layer(X_val)
+
+            X_tr_enc = encoder(X_tr_pre)
+            X_val_enc = encoder(X_val_pre)
+
+            X_tr, X_val = X_tr_enc['pooled_output'].numpy(), X_val_enc['pooled_output'].numpy()
+
+            # X_tr = bert_encode(list(X_tr))
+            # X_val = bert_encode(list(X_val))
         else:
             raise Exception(f"Unknown representation: {rep}")
 
@@ -131,20 +168,20 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
 
 if __name__ == '__main__':
     configurations = [
-        {"classifier": "svc", "sampling": ""},
-        {"classifier": "svc", "sampling": "ros"},
-        {"classifier": "svc", "sampling": "rus"},
-        {"classifier": "svc", "sampling": "smote"},
-
-        {"classifier": "lr", "sampling": ""},
-        {"classifier": "lr", "sampling": "ros"},
-        {"classifier": "lr", "sampling": "rus"},
-        {"classifier": "lr", "sampling": "smote"},
-
-        {"classifier": "sgd", "sampling": ""},
-        {"classifier": "sgd", "sampling": "ros"},
-        {"classifier": "sgd", "sampling": "rus"},
-        {"classifier": "sgd", "sampling": "smote"},
+        # {"classifier": "svc", "sampling": ""},
+        # {"classifier": "svc", "sampling": "ros"},
+        # {"classifier": "svc", "sampling": "rus"},
+        # {"classifier": "svc", "sampling": "smote"},
+        #
+        # {"classifier": "lr", "sampling": ""},
+        # {"classifier": "lr", "sampling": "ros"},
+        # {"classifier": "lr", "sampling": "rus"},
+        # {"classifier": "lr", "sampling": "smote"},
+        #
+        # {"classifier": "sgd", "sampling": ""},
+        # {"classifier": "sgd", "sampling": "ros"},
+        # {"classifier": "sgd", "sampling": "rus"},
+        # {"classifier": "sgd", "sampling": "smote"},
 
         {"classifier": "svc", "sampling": "", "representation": "word2vec"},
         {"classifier": "svc", "sampling": "ros", "representation": "word2vec"},
@@ -159,7 +196,22 @@ if __name__ == '__main__':
         {"classifier": "sgd", "sampling": "", "representation": "word2vec"},
         {"classifier": "sgd", "sampling": "ros", "representation": "word2vec"},
         {"classifier": "sgd", "sampling": "rus", "representation": "word2vec"},
-        {"classifier": "sgd", "sampling": "smote", "representation": "word2vec"}
+        {"classifier": "sgd", "sampling": "smote", "representation": "word2vec"},
+
+        # {"classifier": "svc", "sampling": "", "representation": "bert"},
+        # {"classifier": "svc", "sampling": "ros", "representation": "bert"},
+        # {"classifier": "svc", "sampling": "rus", "representation": "bert"},
+        # {"classifier": "svc", "sampling": "smote", "representation": "bert"},
+        #
+        # {"classifier": "lr", "sampling": "", "representation": "bert"},
+        # {"classifier": "lr", "sampling": "ros", "representation": "bert"},
+        # {"classifier": "lr", "sampling": "rus", "representation": "bert"},
+        # {"classifier": "lr", "sampling": "smote", "representation": "bert"},
+        #
+        # {"classifier": "sgd", "sampling": "", "representation": "bert"},
+        # {"classifier": "sgd", "sampling": "ros", "representation": "bert"},
+        # {"classifier": "sgd", "sampling": "rus", "representation": "bert"},
+        # {"classifier": "sgd", "sampling": "smote", "representation": "bert"}
     ]
 
     data = pd.read_csv("HateSpeechDataset.csv")
@@ -171,15 +223,16 @@ if __name__ == '__main__':
     vectorizer = TfidfVectorizer()
     X_vec = vectorizer.fit_transform(X)
 
-    f = open("output.csv", "w")
-    f.write("clf,sampling,BAC\n")
+    # f = open("output.csv", "w")
+    # f.write("clf,sampling,BAC\n")/
     for config in configurations:
         rep = config.get("representation", "tfidf")
 
         X_input = X if rep == 'tfidf' else X_vec
 
         balanced_scores = run_rskf(X_input, y, sampling=config["sampling"], classifier=config["classifier"], rep=rep)
-        print(f"Mean balanced accuracy for {config["classifier"]} with {config["sampling"]}: {sum(balanced_scores)/len(balanced_scores):.4f}")
-        f.write(f"{config["classifier"]},{config["sampling"]},{sum(balanced_scores)/len(balanced_scores):.4f}\n")
+        print(f"twoj stary {config}")
+        # print(f"Mean balanced accuracy for {config["classifier"]} with {config["sampling"]}: {sum(balanced_scores)/len(balanced_scores):.4f}")
+        # f.write(f"{config["classifier"]},{config["sampling"]},{sum(balanced_scores)/len(balanced_scores):.4f}\n")
 
-    f.close()
+    # f.close()
