@@ -93,19 +93,19 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
         X_tr = X[train_idx]
         y_tr = y.iloc[train_idx]
 
-        if sampling != '':
-            print("Balancing data...")
-        if sampling == 'ros':
-            ros = RandomOverSampler()
-            X_tr, y_tr = ros.fit_resample(X_tr, y_tr)
-        elif sampling == 'rus':
-            rus = RandomUnderSampler()
-            X_tr, y_tr = rus.fit_resample(X_tr, y_tr)
-        elif sampling == 'smote':
-            smote = SMOTE()
-            X_tr, y_tr = smote.fit_resample(X_tr, y_tr)
-        elif sampling != '':
-            raise Exception(f"Unknown sampling technique: {sampling}")
+        # if sampling != '':
+        #     print("Balancing data...")
+        # if sampling == 'ros':
+        #     ros = RandomOverSampler()
+        #     X_tr, y_tr = ros.fit_resample(X_tr, y_tr)
+        # elif sampling == 'rus':
+        #     rus = RandomUnderSampler()
+        #     X_tr, y_tr = rus.fit_resample(X_tr, y_tr)
+        # elif sampling == 'smote':
+        #     smote = SMOTE()
+        #     X_tr, y_tr = smote.fit_resample(X_tr, y_tr)
+        # elif sampling != '':
+        #     raise Exception(f"Unknown sampling technique: {sampling}")
 
         if classifier == 'svc':
             clf = LinearSVC()
@@ -134,21 +134,25 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
 
         elif rep == 'bert':
             print("Encoding texts with BERT...")
-            preprocess_layer = hub.KerasLayer(tfhub_handle_preprocess, name='preprocessing')
-            encoder = hub.KerasLayer(tfhub_handle_encoder, trainable=False)
-
-            X_tr_pre = preprocess_layer(X_tr)
-            X_val_pre = preprocess_layer(X_val)
-
-            X_tr_enc = encoder(X_tr_pre)
-            X_val_enc = encoder(X_val_pre)
-
-            X_tr, X_val = X_tr_enc['pooled_output'].numpy(), X_val_enc['pooled_output'].numpy()
-
-            # X_tr = bert_encode(list(X_tr))
-            # X_val = bert_encode(list(X_val))
+            X_tr = bert_encode(list(X_tr))
+            X_val = bert_encode(list(X_val))
         else:
             raise Exception(f"Unknown representation: {rep}")
+
+
+        if sampling != '':
+            print("Balancing data...")
+        if sampling == 'ros':
+            ros = RandomOverSampler()
+            X_tr, y_tr = ros.fit_resample(X_tr, y_tr)
+        elif sampling == 'rus':
+            rus = RandomUnderSampler()
+            X_tr, y_tr = rus.fit_resample(X_tr, y_tr)
+        elif sampling == 'smote':
+            smote = SMOTE()
+            X_tr, y_tr = smote.fit_resample(X_tr, y_tr)
+        elif sampling != '':
+            raise Exception(f"Unknown sampling technique: {sampling}")
 
         print("Training classifier...")
         clf.fit(X_tr, y_tr)
@@ -183,22 +187,22 @@ if __name__ == '__main__':
         # {"classifier": "sgd", "sampling": "rus"},
         # {"classifier": "sgd", "sampling": "smote"},
 
-        {"classifier": "svc", "sampling": "", "representation": "word2vec"},
-        {"classifier": "svc", "sampling": "ros", "representation": "word2vec"},
-        {"classifier": "svc", "sampling": "rus", "representation": "word2vec"},
-        {"classifier": "svc", "sampling": "smote", "representation": "word2vec"},
+        # {"classifier": "svc", "sampling": "", "representation": "word2vec"},
+        # {"classifier": "svc", "sampling": "ros", "representation": "word2vec"},
+        # {"classifier": "svc", "sampling": "rus", "representation": "word2vec"},
+        # {"classifier": "svc", "sampling": "smote", "representation": "word2vec"},
+        #
+        # {"classifier": "lr", "sampling": "", "representation": "word2vec"},
+        # {"classifier": "lr", "sampling": "ros", "representation": "word2vec"},
+        # {"classifier": "lr", "sampling": "rus", "representation": "word2vec"},
+        # {"classifier": "lr", "sampling": "smote", "representation": "word2vec"},
+        #
+        # {"classifier": "sgd", "sampling": "", "representation": "word2vec"},
+        # {"classifier": "sgd", "sampling": "ros", "representation": "word2vec"},
+        # {"classifier": "sgd", "sampling": "rus", "representation": "word2vec"},
+        # {"classifier": "sgd", "sampling": "smote", "representation": "word2vec"},
 
-        {"classifier": "lr", "sampling": "", "representation": "word2vec"},
-        {"classifier": "lr", "sampling": "ros", "representation": "word2vec"},
-        {"classifier": "lr", "sampling": "rus", "representation": "word2vec"},
-        {"classifier": "lr", "sampling": "smote", "representation": "word2vec"},
-
-        {"classifier": "sgd", "sampling": "", "representation": "word2vec"},
-        {"classifier": "sgd", "sampling": "ros", "representation": "word2vec"},
-        {"classifier": "sgd", "sampling": "rus", "representation": "word2vec"},
-        {"classifier": "sgd", "sampling": "smote", "representation": "word2vec"},
-
-        # {"classifier": "svc", "sampling": "", "representation": "bert"},
+        {"classifier": "svc", "sampling": "", "representation": "bert"},
         # {"classifier": "svc", "sampling": "ros", "representation": "bert"},
         # {"classifier": "svc", "sampling": "rus", "representation": "bert"},
         # {"classifier": "svc", "sampling": "smote", "representation": "bert"},
@@ -214,24 +218,28 @@ if __name__ == '__main__':
         # {"classifier": "sgd", "sampling": "smote", "representation": "bert"}
     ]
 
+    print('reading file...')
     data = pd.read_csv("HateSpeechDataset.csv")
     data = data[data["Label"].isin(['0','1'])]
 
+    print('grouping content...')
     X = data["Content"].reset_index(drop=True)
     y = data["Label"].astype(int).reset_index(drop=True)
 
+    print('creating vectorizer...')
     vectorizer = TfidfVectorizer()
-    X_vec = vectorizer.fit_transform(X)
+    # X_vec = vectorizer.fit_transform(X)
 
     # f = open("output.csv", "w")
     # f.write("clf,sampling,BAC\n")/
+    print('running configurations...')
     for config in configurations:
         rep = config.get("representation", "tfidf")
 
-        X_input = X if rep == 'tfidf' else X_vec
+        X_input = vectorizer.fit_transform(X) if rep == 'tfidf' else X
 
         balanced_scores = run_rskf(X_input, y, sampling=config["sampling"], classifier=config["classifier"], rep=rep)
-        print(f"twoj stary {config}")
+        print(f"{config}")
         # print(f"Mean balanced accuracy for {config["classifier"]} with {config["sampling"]}: {sum(balanced_scores)/len(balanced_scores):.4f}")
         # f.write(f"{config["classifier"]},{config["sampling"]},{sum(balanced_scores)/len(balanced_scores):.4f}\n")
 
