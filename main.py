@@ -132,10 +132,6 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
             print("Generating vectors with word2vec...")
             X_tr, X_val = build_w2v_fatures(X_tr, X_val)
 
-        elif rep == 'bert':
-            print("Encoding texts with BERT...")
-            X_tr = bert_encode(list(X_tr))
-            X_val = bert_encode(list(X_val))
         else:
             raise Exception(f"Unknown representation: {rep}")
 
@@ -236,7 +232,13 @@ if __name__ == '__main__':
     for config in configurations:
         rep = config.get("representation", "tfidf")
 
-        X_input = vectorizer.fit_transform(X) if rep == 'tfidf' else X
+        X_input = vectorizer.fit_transform(X)
+
+        if rep == 'word2vec':
+            X_input = X
+        elif rep == 'bert':
+            print('encoding texts with BERT...')
+            X_input = bert_encode(list(X))
 
         balanced_scores = run_rskf(X_input, y, sampling=config["sampling"], classifier=config["classifier"], rep=rep)
         print(f"{config}")
