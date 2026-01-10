@@ -1,3 +1,5 @@
+import os
+import tensorflow_text as text
 import gensim
 import numpy as np
 import seaborn as sns
@@ -14,12 +16,10 @@ from imblearn.over_sampling import SMOTE
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
 from sklearn.decomposition import TruncatedSVD
-import tensorflow_text as text
-import tensorflow as tf
 import tensorflow_hub as hub
 
 tfhub_handle_preprocess = "https://tfhub.dev/tensorflow/bert_en_uncased_preprocess/3"
-tfhub_handle_encoder = "https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/4"
+tfhub_handle_encoder = "https://tfhub.dev/tensorflow/albert_en_base/3"
 
 bert_preprocess = hub.KerasLayer(tfhub_handle_preprocess)
 bert_encoder = hub.KerasLayer(tfhub_handle_encoder, trainable=False)
@@ -108,7 +108,7 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
         #     raise Exception(f"Unknown sampling technique: {sampling}")
 
         if classifier == 'svc':
-            clf = LinearSVC()
+            clf = LinearSVC(max_iter=1000)
         elif classifier == 'lr':
             clf = LogisticRegression(max_iter=1000)
         elif classifier == 'sgd':
@@ -131,9 +131,6 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
         elif rep == 'word2vec':
             print("Generating vectors with word2vec...")
             X_tr, X_val = build_w2v_fatures(X_tr, X_val)
-
-        else:
-            raise Exception(f"Unknown representation: {rep}")
 
 
         if sampling != '':
@@ -168,50 +165,50 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
 
 if __name__ == '__main__':
     configurations = [
-        # {"classifier": "svc", "sampling": ""},
-        # {"classifier": "svc", "sampling": "ros"},
-        # {"classifier": "svc", "sampling": "rus"},
-        # {"classifier": "svc", "sampling": "smote"},
-        #
-        # {"classifier": "lr", "sampling": ""},
-        # {"classifier": "lr", "sampling": "ros"},
-        # {"classifier": "lr", "sampling": "rus"},
-        # {"classifier": "lr", "sampling": "smote"},
-        #
-        # {"classifier": "sgd", "sampling": ""},
-        # {"classifier": "sgd", "sampling": "ros"},
-        # {"classifier": "sgd", "sampling": "rus"},
-        # {"classifier": "sgd", "sampling": "smote"},
+        {"classifier": "svc", "sampling": ""},
+        {"classifier": "svc", "sampling": "ros"},
+        {"classifier": "svc", "sampling": "rus"},
+        {"classifier": "svc", "sampling": "smote"},
 
-        # {"classifier": "svc", "sampling": "", "representation": "word2vec"},
-        # {"classifier": "svc", "sampling": "ros", "representation": "word2vec"},
-        # {"classifier": "svc", "sampling": "rus", "representation": "word2vec"},
-        # {"classifier": "svc", "sampling": "smote", "representation": "word2vec"},
-        #
-        # {"classifier": "lr", "sampling": "", "representation": "word2vec"},
-        # {"classifier": "lr", "sampling": "ros", "representation": "word2vec"},
-        # {"classifier": "lr", "sampling": "rus", "representation": "word2vec"},
-        # {"classifier": "lr", "sampling": "smote", "representation": "word2vec"},
-        #
-        # {"classifier": "sgd", "sampling": "", "representation": "word2vec"},
-        # {"classifier": "sgd", "sampling": "ros", "representation": "word2vec"},
-        # {"classifier": "sgd", "sampling": "rus", "representation": "word2vec"},
-        # {"classifier": "sgd", "sampling": "smote", "representation": "word2vec"},
+        {"classifier": "lr", "sampling": ""},
+        {"classifier": "lr", "sampling": "ros"},
+        {"classifier": "lr", "sampling": "rus"},
+        {"classifier": "lr", "sampling": "smote"},
+
+        {"classifier": "sgd", "sampling": ""},
+        {"classifier": "sgd", "sampling": "ros"},
+        {"classifier": "sgd", "sampling": "rus"},
+        {"classifier": "sgd", "sampling": "smote"},
+
+        {"classifier": "svc", "sampling": "", "representation": "word2vec"},
+        {"classifier": "svc", "sampling": "ros", "representation": "word2vec"},
+        {"classifier": "svc", "sampling": "rus", "representation": "word2vec"},
+        {"classifier": "svc", "sampling": "smote", "representation": "word2vec"},
+
+        {"classifier": "lr", "sampling": "", "representation": "word2vec"},
+        {"classifier": "lr", "sampling": "ros", "representation": "word2vec"},
+        {"classifier": "lr", "sampling": "rus", "representation": "word2vec"},
+        {"classifier": "lr", "sampling": "smote", "representation": "word2vec"},
+
+        {"classifier": "sgd", "sampling": "", "representation": "word2vec"},
+        {"classifier": "sgd", "sampling": "ros", "representation": "word2vec"},
+        {"classifier": "sgd", "sampling": "rus", "representation": "word2vec"},
+        {"classifier": "sgd", "sampling": "smote", "representation": "word2vec"},
 
         {"classifier": "svc", "sampling": "", "representation": "bert"},
-        # {"classifier": "svc", "sampling": "ros", "representation": "bert"},
-        # {"classifier": "svc", "sampling": "rus", "representation": "bert"},
-        # {"classifier": "svc", "sampling": "smote", "representation": "bert"},
-        #
-        # {"classifier": "lr", "sampling": "", "representation": "bert"},
-        # {"classifier": "lr", "sampling": "ros", "representation": "bert"},
-        # {"classifier": "lr", "sampling": "rus", "representation": "bert"},
-        # {"classifier": "lr", "sampling": "smote", "representation": "bert"},
-        #
-        # {"classifier": "sgd", "sampling": "", "representation": "bert"},
-        # {"classifier": "sgd", "sampling": "ros", "representation": "bert"},
-        # {"classifier": "sgd", "sampling": "rus", "representation": "bert"},
-        # {"classifier": "sgd", "sampling": "smote", "representation": "bert"}
+        {"classifier": "svc", "sampling": "ros", "representation": "bert"},
+        {"classifier": "svc", "sampling": "rus", "representation": "bert"},
+        {"classifier": "svc", "sampling": "smote", "representation": "bert"},
+
+        {"classifier": "lr", "sampling": "", "representation": "bert"},
+        {"classifier": "lr", "sampling": "ros", "representation": "bert"},
+        {"classifier": "lr", "sampling": "rus", "representation": "bert"},
+        {"classifier": "lr", "sampling": "smote", "representation": "bert"},
+
+        {"classifier": "sgd", "sampling": "", "representation": "bert"},
+        {"classifier": "sgd", "sampling": "ros", "representation": "bert"},
+        {"classifier": "sgd", "sampling": "rus", "representation": "bert"},
+        {"classifier": "sgd", "sampling": "smote", "representation": "bert"}
     ]
 
     print('reading file...')
@@ -221,6 +218,13 @@ if __name__ == '__main__':
     print('grouping content...')
     X = data["Content"].reset_index(drop=True)
     y = data["Label"].astype(int).reset_index(drop=True)
+
+    #for test
+    print(X.head(20))
+
+    # Uncomment it when embeddings not available
+    # X = X.iloc[::10]
+    # y = y.iloc[::10]
 
     print('creating vectorizer...')
     vectorizer = TfidfVectorizer()
@@ -238,8 +242,13 @@ if __name__ == '__main__':
             X_input = X
         elif rep == 'bert':
             print('encoding texts with BERT...')
-            X_input = bert_encode(list(X))
+            if os.path.exists("bert_embeddings.npy"):
+                X_input = np.load("bert_embeddings.npy")
+            else:
+                X_input = bert_encode(list(X), batch_size=128)
+                np.save("bert_embeddings.npy", X_input)
 
+        print('running rskf...')
         balanced_scores = run_rskf(X_input, y, sampling=config["sampling"], classifier=config["classifier"], rep=rep)
         print(f"{config}")
         # print(f"Mean balanced accuracy for {config["classifier"]} with {config["sampling"]}: {sum(balanced_scores)/len(balanced_scores):.4f}")
