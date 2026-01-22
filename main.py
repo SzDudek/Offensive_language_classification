@@ -1,5 +1,6 @@
 import os
 import tensorflow_text as text
+import tensorflow as tf
 import gensim
 import numpy as np
 import seaborn as sns
@@ -18,6 +19,7 @@ from imblearn.under_sampling import RandomUnderSampler
 from sklearn.decomposition import TruncatedSVD
 import tensorflow_hub as hub
 from scipy.stats import ttest_rel
+from sklearn.preprocessing import StandardScaler
 
 
 tfhub_handle_preprocess = "https://tfhub.dev/tensorflow/bert_en_uncased_preprocess/3"
@@ -46,7 +48,19 @@ def bert_encode(texts, batch_size=32):
         outputs = bert_encoder(inputs)
 
         cls_embeddings = outputs["pooled_output"]
-        embeddings.append(cls_embeddings.numpy())
+
+
+        token_embeddings = outputs["sequence_output"]
+        attention_mask = inputs["attention_mask"]
+
+        mask = tf.cast(tf.expand_dims(attention_mask, -1), tf.float32)
+        masked_embeddings = token_embeddings * mask
+        sum_embeddings = tf.reduce_sum(masked_embeddings, axis=1)
+        token_count = tf.reduce_sum(mask, axis=1)
+
+        sentence_embedding = sum_embeddings / token_count
+
+        embeddings.append(sentence_embedding)
 
     return np.vstack(embeddings)
 
@@ -91,8 +105,15 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
     for fold, (train_idx, val_idx) in enumerate(rskf.split(X, y)):
         print(f"\n---- Fold {fold + 1} ----")
 
-        X_tr = X[train_idx]
         y_tr = y.iloc[train_idx]
+        y_val = y.iloc[val_idx]
+
+        if isinstance(X, pd.Series):
+            X_tr = X.iloc[train_idx]
+            X_val = X.iloc[val_idx]
+        else:
+            X_tr = X[train_idx]
+            X_val = X[val_idx]
 
         # if sampling != '':
         #     print("Balancing data...")
@@ -119,9 +140,6 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
                 clf = SGDClassifier()
         else:
             raise Exception(f"Unknown classifier {classifier}")
-
-        X_val = X[val_idx]
-        y_val = y.iloc[val_idx]
 
         if rep == 'tfidf':
 
@@ -153,6 +171,13 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
         elif sampling != '':
             raise Exception(f"Unknown sampling technique: {sampling}")
 
+        if rep in ["bert", "word2vec"]:
+            from sklearn.preprocessing import StandardScaler
+            print("Scaling data...")
+            scaler = StandardScaler()
+            X_tr = scaler.fit_transform(X_tr)
+            X_val = scaler.transform(X_val)
+
         print("Training classifier...")
         clf.fit(X_tr, y_tr)
 
@@ -171,50 +196,50 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
 
 if __name__ == '__main__':
     configurations = [
-        {"classifier": "svc", "sampling": ""},
-        {"classifier": "svc", "sampling": "ros"},
-        {"classifier": "svc", "sampling": "rus"},
-        {"classifier": "svc", "sampling": "smote"},
+        # {"classifier": "svc", "sampling": ""},
+        # {"classifier": "svc", "sampling": "ros"},
+        # {"classifier": "svc", "sampling": "rus"},
+        # {"classifier": "svc", "sampling": "smote"},
 
-        {"classifier": "lr", "sampling": ""},
-        {"classifier": "lr", "sampling": "ros"},
-        {"classifier": "lr", "sampling": "rus"},
-        {"classifier": "lr", "sampling": "smote"},
-
-        {"classifier": "sgd", "sampling": ""},
-        {"classifier": "sgd", "sampling": "ros"},
-        {"classifier": "sgd", "sampling": "rus"},
-        {"classifier": "sgd", "sampling": "smote"},
-
-        {"classifier": "svc", "sampling": "", "representation": "word2vec"},
-        {"classifier": "svc", "sampling": "ros", "representation": "word2vec"},
-        {"classifier": "svc", "sampling": "rus", "representation": "word2vec"},
-        {"classifier": "svc", "sampling": "smote", "representation": "word2vec"},
-
-        {"classifier": "lr", "sampling": "", "representation": "word2vec"},
-        {"classifier": "lr", "sampling": "ros", "representation": "word2vec"},
+        # {"classifier": "lr", "sampling": ""},
+        # {"classifier": "lr", "sampling": "ros"},
+        # {"classifier": "lr", "sampling": "rus"},
+        # {"classifier": "lr", "sampling": "smote"},
+        #
+        # {"classifier": "sgd", "sampling": ""},
+        # {"classifier": "sgd", "sampling": "ros"},
+        # {"classifier": "sgd", "sampling": "rus"},
+        # {"classifier": "sgd", "sampling": "smote"},
+        #
+        # {"classifier": "svc", "sampling": "", "representation": "word2vec"},
+        # {"classifier": "svc", "sampling": "ros", "representation": "word2vec"},
+        # {"classifier": "svc", "sampling": "rus", "representation": "word2vec"},
+        # {"classifier": "svc", "sampling": "smote", "representation": "word2vec"},
+        #
+        # {"classifier": "lr", "sampling": "", "representation": "word2vec"},
+        # {"classifier": "lr", "sampling": "ros", "representation": "word2vec"},
         {"classifier": "lr", "sampling": "rus", "representation": "word2vec"},
-        {"classifier": "lr", "sampling": "smote", "representation": "word2vec"},
-
-        {"classifier": "sgd", "sampling": "", "representation": "word2vec"},
-        {"classifier": "sgd", "sampling": "ros", "representation": "word2vec"},
-        {"classifier": "sgd", "sampling": "rus", "representation": "word2vec"},
-        {"classifier": "sgd", "sampling": "smote", "representation": "word2vec"},
-
-        {"classifier": "svc", "sampling": "", "representation": "bert"},
-        {"classifier": "svc", "sampling": "ros", "representation": "bert"},
+        # {"classifier": "lr", "sampling": "smote", "representation": "word2vec"},
+        #
+        # {"classifier": "sgd", "sampling": "", "representation": "word2vec"},
+        # {"classifier": "sgd", "sampling": "ros", "representation": "word2vec"},
+        # {"classifier": "sgd", "sampling": "rus", "representation": "word2vec"},
+        # {"classifier": "sgd", "sampling": "smote", "representation": "word2vec"},
+        #
+        # {"classifier": "svc", "sampling": "", "representation": "bert"},
+        # {"classifier": "svc", "sampling": "ros", "representation": "bert"},
         {"classifier": "svc", "sampling": "rus", "representation": "bert"},
-        {"classifier": "svc", "sampling": "smote", "representation": "bert"},
-
-        {"classifier": "lr", "sampling": "", "representation": "bert"},
-        {"classifier": "lr", "sampling": "ros", "representation": "bert"},
-        {"classifier": "lr", "sampling": "rus", "representation": "bert"},
-        {"classifier": "lr", "sampling": "smote", "representation": "bert"},
-
-        {"classifier": "sgd", "sampling": "", "representation": "bert"},
-        {"classifier": "sgd", "sampling": "ros", "representation": "bert"},
-        {"classifier": "sgd", "sampling": "rus", "representation": "bert"},
-        {"classifier": "sgd", "sampling": "smote", "representation": "bert"}
+        # {"classifier": "svc", "sampling": "smote", "representation": "bert"},
+        #
+        # {"classifier": "lr", "sampling": "", "representation": "bert"},
+        # {"classifier": "lr", "sampling": "ros", "representation": "bert"},
+        # {"classifier": "lr", "sampling": "rus", "representation": "bert"},
+        # {"classifier": "lr", "sampling": "smote", "representation": "bert"},
+        #
+        # {"classifier": "sgd", "sampling": "", "representation": "bert"},
+        # {"classifier": "sgd", "sampling": "ros", "representation": "bert"},
+        # {"classifier": "sgd", "sampling": "rus", "representation": "bert"},
+        # {"classifier": "sgd", "sampling": "smote", "representation": "bert"}
     ]
 
     cfg_num = len(configurations)
