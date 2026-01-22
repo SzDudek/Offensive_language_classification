@@ -7,15 +7,10 @@ from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.metrics import balanced_accuracy_score
 
 print(tf.__version__)
-# -------------------------------
-# ALBERT handles
-# -------------------------------
+
 TFHUB_PREPROCESS = "https://tfhub.dev/tensorflow/bert_en_uncased_preprocess/3"
 TFHUB_ENCODER = "https://tfhub.dev/tensorflow/albert_en_base/3"
 
-# -------------------------------
-# Build ALBERT classifier
-# -------------------------------
 def build_albert_classifier():
     text_input = tf.keras.layers.Input(
         shape=(),
@@ -52,22 +47,15 @@ def build_albert_classifier():
 
     return model, encoder
 
-# -------------------------------
-# Load data
-# -------------------------------
 data = pd.read_csv("HateSpeechDataset.csv")
 data = data[data["Label"].isin(["0", "1"])]
 
 X = data["Content"].reset_index(drop=True)
 y = data["Label"].astype(int).reset_index(drop=True)
 
-# (Optional) subsample for speed
 X = X.iloc[::10]
 y = y.iloc[::10]
 
-# -------------------------------
-# Cross-validation
-# -------------------------------
 rskf = RepeatedStratifiedKFold(
     n_splits=5,
     n_repeats=1,
@@ -85,7 +73,6 @@ for fold, (train_idx, val_idx) in enumerate(rskf.split(X, y), start=1):
     X_val = X.iloc[val_idx]
     y_val = y.iloc[val_idx]
 
-    # Build and compile model (NEW MODEL PER FOLD)
     model, encoder = build_albert_classifier()
 
     loss = tf.keras.losses.BinaryCrossentropy(from_logits=False)
@@ -103,10 +90,8 @@ for fold, (train_idx, val_idx) in enumerate(rskf.split(X, y), start=1):
         metrics=metrics
     )
 
-    # Optional: handle imbalance
     class_weight = {0: 1.0, 1: 5.0}
 
-    # Train
     model.fit(
         X_tr,
         y_tr,
@@ -135,21 +120,15 @@ for fold, (train_idx, val_idx) in enumerate(rskf.split(X, y), start=1):
         verbose=1
     )
 
-    # Predict probabilities
     y_val_probs = model.predict(X_val, batch_size=batch_size)
 
-    # Convert to labels
     y_val_pred = (y_val_probs > 0.5).astype(int).ravel()
 
-    # Balanced accuracy
     bac = balanced_accuracy_score(y_val, y_val_pred)
     bac_scores.append(bac)
 
     print(f"Fold {fold} BAC: {bac:.4f}")
 
-# -------------------------------
-# Final results
-# -------------------------------
 mean_bac = np.mean(bac_scores)
 std_bac = np.std(bac_scores)
 

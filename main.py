@@ -17,6 +17,8 @@ from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
 from sklearn.decomposition import TruncatedSVD
 import tensorflow_hub as hub
+from scipy.stats import ttest_rel
+
 
 tfhub_handle_preprocess = "https://tfhub.dev/tensorflow/bert_en_uncased_preprocess/3"
 tfhub_handle_encoder = "https://tfhub.dev/tensorflow/albert_en_base/3"
@@ -43,7 +45,6 @@ def bert_encode(texts, batch_size=32):
         inputs = bert_preprocess(batch)
         outputs = bert_encoder(inputs)
 
-        # CLS token embedding
         cls_embeddings = outputs["pooled_output"]
         embeddings.append(cls_embeddings.numpy())
 
@@ -123,7 +124,12 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
         y_val = y.iloc[val_idx]
 
         if rep == 'tfidf':
+
             print("Reducing features by SVD...")
+            vectorizer = TfidfVectorizer()
+            X_tr = vectorizer.fit_transform(X_tr)
+            X_val = vectorizer.transform(X_val)
+
             svd = TruncatedSVD(n_components=200)
             X_tr = svd.fit_transform(X_tr)
             X_val = svd.transform(X_val)
@@ -158,7 +164,7 @@ def run_rskf(X, y, n_splits=5, n_repeats=1, sampling='', classifier='svc', rep='
         print(f"Fold score: {score:.4f}")
 
         if fold == 0:
-            plot_confusion_matrix(y_val, y_val_pred, f"{classifier}_{sampling}.png")
+            plot_confusion_matrix(y_val, y_val_pred, f"{classifier}_{sampling}_{rep}.png")
 
     return fold_scores
 
@@ -211,6 +217,18 @@ if __name__ == '__main__':
         {"classifier": "sgd", "sampling": "smote", "representation": "bert"}
     ]
 
+    cfg_num = len(configurations)
+
+    all_scores = []
+    all_std = []
+
+    alfa = .05
+    t_statistic = np.zeros((cfg_num, cfg_num))
+    p_value = np.zeros((cfg_num, cfg_num))
+    adventage = np.zeros((cfg_num, cfg_num))
+    significance = np.zeros((cfg_num, cfg_num))
+    final_overview = np.zeros((cfg_num, cfg_num))
+
     print('reading file...')
     data = pd.read_csv("HateSpeechDataset.csv")
     data = data[data["Label"].isin(['0','1'])]
@@ -223,26 +241,24 @@ if __name__ == '__main__':
     print(X.head(20))
 
     # Uncomment it when embeddings not available
-    # X = X.iloc[::10]
-    # y = y.iloc[::10]
+    X = X.iloc[::10]
+    y = y.iloc[::10]
 
     print('creating vectorizer...')
-    vectorizer = TfidfVectorizer()
+
     # X_vec = vectorizer.fit_transform(X)
 
-    # f = open("output.csv", "w")
     # f.write("clf,sampling,BAC\n")/
     print('running configurations...')
     for config in configurations:
         rep = config.get("representation", "tfidf")
 
-        X_input = vectorizer.fit_transform(X)
-
-        if rep == 'word2vec':
+        if rep == 'word2vec' or rep == 'tfidf':
             X_input = X
         elif rep == 'bert':
             print('encoding texts with BERT...')
             if os.path.exists("bert_embeddings.npy"):
+                print('Found the bert embeddings...')
                 X_input = np.load("bert_embeddings.npy")
             else:
                 X_input = bert_encode(list(X), batch_size=128)
@@ -250,8 +266,29 @@ if __name__ == '__main__':
 
         print('running rskf...')
         balanced_scores = run_rskf(X_input, y, sampling=config["sampling"], classifier=config["classifier"], rep=rep)
+        all_scores.append(balanced_scores)
+        avg_scores = np.mean(balanced_scores)
+        std_scores = np.std(balanced_scores)
+        all_std.append(std_scores)
         print(f"{config}")
+
+        rep = config.get("representation", "tfidf")
+
+        with open(f"output_{config['classifier']}_{config['sampling']}_{rep}.csv", "w") as f:
+            f.write(f"{avg_scores:.4f},{std_scores:.4f}\n")
+
         # print(f"Mean balanced accuracy for {config["classifier"]} with {config["sampling"]}: {sum(balanced_scores)/len(balanced_scores):.4f}")
         # f.write(f"{config["classifier"]},{config["sampling"]},{sum(balanced_scores)/len(balanced_scores):.4f}\n")
 
-    # f.close()
+    for i in range(cfg_num):
+        for j in range(cfg_num):
+            t_statistic[i, j], p_value[i, j] = ttest_rel(all_scores[i], all_scores[j])
+
+    adventage[t_statistic > 0] = 1
+    significance[p_value <= alfa] = 1
+    final_overview = adventage * significance
+
+    with open("output.csv", "w") as f:
+        for row in final_overview:
+            line = ",".join(map(str, row))
+            f.write(line + "\n")
